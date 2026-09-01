@@ -6,7 +6,47 @@ const {
     authenticateToken,
     requireAdmin
 } = require("../middleware/authMiddleware");
+// ========================================
+// ADMIN: GET ALL PRODUCTS
+// ACTIVE + INACTIVE
+// ========================================
+router.get(
+  "/admin/all",
+  authenticateToken,
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const result = await pool.query(`
+        SELECT
+          p.id,
+          p.name,
+          p.description,
+          p.price,
+          p.unit,
+          p.stock_quantity,
+          p.is_active,
+          p.category_id,
+          c.name AS category
+        FROM products p
+        LEFT JOIN categories c
+          ON p.category_id = c.id
+        ORDER BY p.id;
+      `);
 
+      res.status(200).json({
+        message: "All products fetched successfully",
+        products: result.rows,
+      });
+
+    } catch (error) {
+      console.error("Error fetching admin products:", error);
+
+      res.status(500).json({
+        message: "Failed to fetch products",
+      });
+    }
+  }
+);
 // GET all products
 router.get("/", async (req, res) => {
     try {
@@ -18,82 +58,178 @@ router.get("/", async (req, res) => {
                 p.price,
                 p.unit,
                 p.stock_quantity,
+                p.is_active,
+                p.category_id,
                 c.name AS category
             FROM products p
             LEFT JOIN categories c
                 ON p.category_id = c.id
-            WHERE p.is_active = true
+            
             ORDER BY p.id;
         `);
 
-        res.json(result.rows);
+        res.status(200).json(result.rows);
 
     } catch (error) {
-        console.error(error);
+        console.error("Error fetching products:",error);
 
         res.status(500).json({
             message: "Failed to fetch products"
         });
     }
 });
-// ADD new product
+// ========================================
+// ADMIN: ADD NEW PRODUCT
+// ========================================
 router.post(
     "/",
     authenticateToken,
     requireAdmin,
     async (req, res) => {
-    try {
-        const {
-    name,
-    description,
-    price,
-    unit,
-    category_id
-} = req.body;
+        const client = await pool.connect();
 
-        // Basic validation
-        if (!category_id || !name || price === undefined) {
-            return res.status(400).json({
-                message: "Category, product name and price are required"
-            });
-        }
-
-        const result = await pool.query(
-            `
-           UPDATE products
-SET
-    name = $1,
-    description = $2,
-    price = $3,
-    unit = $4,
-    category_id = $5,
-    updated_at = CURRENT_TIMESTAMP
-WHERE id = $6
-RETURNING *;
-  `,
-            [
-                category_id,
+        try {
+            const {
                 name,
-                description || null,
+                description,
                 price,
-                unit || "sapling",
-                //stock_quantity || 0
-            ]
-        );
+                unit,
+                category_id,
+                stock_quantity
+            } = req.body;
 
-        res.status(201).json({
-            message: "Product added successfully 🌱",
-            product: result.rows[0]
-        });
+            // -------------------------------
+            // VALIDATION
+            // -------------------------------
+            if (!name || price === undefined || !category_id) {
+                return res.status(400).json({
+                    message: "Product name, price and category are required"
+                });
+            }
 
-    } catch (error) {
-        console.error("Error adding product:", error);
+            if (Number(price) < 0) {
+                return res.status(400).json({
+                    message: "Price cannot be negative"
+                });
+            }
 
-        res.status(500).json({
-            message: "Failed to add product"
-        });
+            if (
+                stock_quantity !== undefined &&
+                Number(stock_quantity) < 0
+            ) {
+                return res.status(400).json({
+                    message: "Stock quantity cannot be negative"
+                });
+            }
+
+            // -------------------------------
+            // CHECK CATEGORY
+            // -------------------------------
+            const categoryResult = await client.query(
+                `
+                SELECT id, name
+                FROM categories
+                WHERE id = $1;
+                `,
+                [category_id]
+            );
+
+            if (categoryResult.rows.length === 0) {
+                return res.status(400).json({
+                    message: "Invalid category ID. Category does not exist."
+                });
+            }
+
+            // -------------------------------
+            // START TRANSACTION
+            // -------------------------------
+            await client.query("BEGIN");
+
+            // -------------------------------
+            // INSERT PRODUCT
+            // -------------------------------
+            const productResult = await client.query(
+                `
+                INSERT INTO products
+                (
+                    category_id,
+                    name,
+                    description,
+                    price,
+                    unit,
+                    stock_quantity,
+                    is_active
+                )
+                VALUES
+                ($1, $2, $3, $4, $5, $6, true)
+                RETURNING *;
+                `,
+                [
+                    category_id,
+                    name,
+                    description || null,
+                    Number(price),
+                    unit || "sapling",
+                    Number(stock_quantity || 0)
+                ]
+            );
+
+            const product = productResult.rows[0];
+
+            // -------------------------------
+            // ADD INITIAL INVENTORY
+            // -------------------------------
+            if (Number(stock_quantity || 0) > 0) {
+
+                await client.query(
+                    `
+                    INSERT INTO inventory
+                    (
+                        product_id,
+                        quantity,
+                        movement_type,
+                        note
+                    )
+                    VALUES
+                    ($1, $2, 'RESTOCK', $3);
+                    `,
+                    [
+                        product.id,
+                        Number(stock_quantity),
+                        "Initial stock for new product"
+                    ]
+                );
+            }
+
+            // -------------------------------
+            // COMMIT
+            // -------------------------------
+            await client.query("COMMIT");
+
+            res.status(201).json({
+                message: "Product added successfully 🌱",
+                product: product
+            });
+
+        } catch (error) {
+
+            await client.query("ROLLBACK");
+
+            console.error(
+                "Error adding product:",
+                error
+            );
+
+            res.status(500).json({
+                message: "Failed to add product",
+                error: error.message
+            });
+
+        } finally {
+            client.release();
+        }
     }
-});
+);
 // GET SINGLE PRODUCT
 router.get("/:id", async (req, res) => {
     try {
@@ -203,7 +339,7 @@ router.put(
     }
 );
 // DEACTIVATE / ACTIVATE PRODUCT
-route.patch(
+router.patch(
     "/:id/status",
     authenticateToken,
     requireAdmin,

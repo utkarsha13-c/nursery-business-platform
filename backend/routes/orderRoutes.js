@@ -9,6 +9,46 @@ const {
 } = require("../middleware/authMiddleware");
 
 
+// ========================================
+// ADMIN: GET ALL ORDERS
+// ========================================
+router.get(
+    "/",
+    authenticateToken,
+    requireAdmin,
+    async (req, res) => {
+        try {
+            const result = await pool.query(`
+                SELECT
+                    o.id,
+                    o.customer_id,
+                    u.name AS customer_name,
+                    u.email AS customer_email,
+                    o.status,
+                    o.total_amount,
+                    o.created_at
+                FROM orders o
+                LEFT JOIN users u
+                    ON o.customer_id = u.id
+                ORDER BY o.created_at DESC;
+            `);
+
+            res.status(200).json({
+                message: "Orders fetched successfully",
+                orders: result.rows
+            });
+
+        } catch (error) {
+            console.error("Error fetching orders:", error);
+
+            res.status(500).json({
+                message: "Failed to fetch orders"
+            });
+        }
+    }
+);
+
+
 // ADMIN: Create order from an approved request
 router.post(
     "/from-request/:requestId",
@@ -210,6 +250,50 @@ if (!request.is_active) {
 );
 
 // CUSTOMER: View my orders
+// ========================================
+// ADMIN: VIEW ALL ORDERS
+// ========================================
+router.get(
+    "/",
+    authenticateToken,
+    requireAdmin,
+    async (req, res) => {
+        try {
+
+            const result = await pool.query(`
+                SELECT
+                    o.id,
+                    o.customer_id,
+                    u.name AS customer_name,
+                    u.email AS customer_email,
+                    o.status,
+                    o.total_amount,
+                    o.created_at
+                FROM orders o
+                JOIN users u
+                    ON o.customer_id = u.id
+                ORDER BY o.created_at DESC;
+            `);
+
+            res.status(200).json({
+                message: "Orders fetched successfully 🌱",
+                orders: result.rows
+            });
+
+        } catch (error) {
+
+            console.error(
+                "Error fetching admin orders:",
+                error
+            );
+
+            res.status(500).json({
+                message: "Failed to fetch orders",
+                
+            });
+        }
+    }
+);
 router.get("/my-orders", authenticateToken, async (req, res) => {
     try {
         const customerId = req.user.id;
