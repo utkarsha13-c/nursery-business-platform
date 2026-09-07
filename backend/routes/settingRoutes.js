@@ -115,7 +115,7 @@ router.put(
             });
 
         } catch (error) {
-            console.error("Update settings error:", error);
+            console.error("Update nursery_settings error:", error);
 
             res.status(500).json({
                 message: "Failed to update nursery settings"

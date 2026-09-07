@@ -34,7 +34,7 @@ type Product = {
 
 type Order = {
   id: number;
-  customer_id : number;
+  customer_id: number;
   customer_name: string;
   customer_email: string;
   total_amount: number | string;
@@ -81,8 +81,7 @@ export default function AdminPage() {
 
   /* ---------------- USERS ---------------- */
 
- const [users, setUser] = useState<User[]>([]);
-const [order, setOrder] = useState<Order[]>([]);
+ const [users, setUsers] = useState<User[]>([]);
   /* ---------------- PRODUCTS ---------------- */
 
   const [products, setProducts] = useState<Product[]>([]);
@@ -90,7 +89,7 @@ const [order, setOrder] = useState<Order[]>([]);
   const [loadingProducts, setLoadingProducts] = useState(true);
 
   const [productError, setProductError] = useState("");
-  const [userError, setUserError] = useState("");
+  const [userError, setUsersError] = useState("");
   
   const [orders, setOrders] = useState<Order[]>([]);
   
@@ -111,7 +110,11 @@ const [orderError, setOrderError] =
   const [requests, setRequests] = useState<RequestItem[]>([]);
 const [showNotifications, setShowNotifications] = useState(false);
 const [loadingRequests, setLoadingRequests] = useState(false);
-
+const [currentPassword, setCurrentPassword] = useState("");
+const [newPassword, setNewPassword] = useState("");
+const [confirmPassword, setConfirmPassword] = useState("");
+const [changingPassword, setChangingPassword] = useState(false);
+const [savingSettings, setSavingSettings] = useState(false);
 const [loadingInventory, setLoadingInventory] =
   useState(false);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -389,13 +392,13 @@ const fetchProducts = async () => {
  const fetchUsers = async () => {
   try {
     setLoadingUsers(true);
-    setUserError("");
+    setUsersError("");
 
     const token = getToken();
 
     if (!token) {
-      setUser([]);
-      setUserError("Admin login token not found.");
+      setUsers([]);
+      setUsersError("Admin login token not found.");
       return;
     }
 
@@ -422,14 +425,14 @@ const fetchProducts = async () => {
       ? data
       : data.users || [];
 
-    setUser(userData);
+    setUsers(userData);
 
   } catch (error) {
     console.error("Fetch users error:", error);
 
-    setUser([]);
+    setUsers([]);
 
-    setUserError(
+    setUsersError(
       error instanceof Error
         ? error.message
         : "Failed to fetch users"
@@ -480,68 +483,6 @@ const fetchRequests = async () => {
     setLoadingRequests(false);
   }
 };
-  const fetchOrder = async () => {
-    try {
-      setLoadingOrders(true);
-
-      const token = getToken();
-
-      if (!token) {
-        setOrder([]);
-        return;
-      }
-
-      /*
-        Change this endpoint if your order route
-        is different.
-      */
-
-      const response = await fetch(`${API_URL}/api/orders`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-
-      if (!response.ok) {
-        throw new Error("Failed to fetch orders");
-      }
-
-      const data = await response.json();
-
-      const orderData = Array.isArray(data)
-        ? data
-        : data.orders || [];
-
-      const formattedOrders: Order[] =
-        orderData.map((order: any) => ({
-          id: order.id,
-          customer:
-            order.customer_name ||
-            order.customer ||
-            "Customer",
-          amount: Number(
-            order.total_amount ||
-              order.amount ||
-              0
-          ),
-          status: order.status,
-          date: order.created_at
-            ? new Date(
-                order.created_at
-              ).toLocaleDateString()
-            : "-",
-        }));
-
-      setOrder(formattedOrders);
-    } catch (error) {
-      console.error("Fetch orders error:", error);
-
-      setOrder([]);
-    } finally {
-      setLoadingOrders(false);
-    }
-  };
-
   /* =========================================================
      LOAD DATA WHEN ADMIN PAGE OPENS
   ========================================================= */
@@ -946,7 +887,7 @@ const saveProduct = async () => {
       For now this updates the UI.
     */
 
-    setUser((currentUsers) =>
+    setUsers((currentUsers) =>
       currentUsers.map((item) =>
         item.id === user.id
           ? {
@@ -1864,6 +1805,70 @@ const saveProduct = async () => {
         return renderDashboard();
     }
   };
+  const changePassword = async () => {
+  try {
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      alert("Please fill all password fields");
+      return;
+    }
+
+    if (newPassword.length < 6) {
+      alert("New password must be at least 6 characters");
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      alert("New password and confirm password do not match");
+      return;
+    }
+
+    const token = getToken();
+
+    if (!token) {
+      alert("Admin login required");
+      return;
+    }
+
+    setChangingPassword(true);
+
+    const response = await fetch(
+      `${API_URL}/api/settings/change-password`,
+      {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          currentPassword,
+          newPassword,
+        }),
+      }
+    );
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.message || "Failed to change password");
+    }
+
+    alert("Password changed successfully");
+
+    setCurrentPassword("");
+    setNewPassword("");
+    setConfirmPassword("");
+  } catch (error) {
+    console.error("Change password error:", error);
+
+    alert(
+      error instanceof Error
+        ? error.message
+        : "Failed to change password"
+    );
+  } finally {
+    setChangingPassword(false);
+  }
+};
 const renderSettings = () => {
   return (
     <div>
@@ -1900,7 +1905,7 @@ const renderSettings = () => {
                     nursery_name: e.target.value,
                   })
                 }
-                className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none focus:border-green-600"
+                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-black placeholder:text-slate-400 outline-none focus:border-green-600"
               />
             </div>
 
@@ -1908,7 +1913,7 @@ const renderSettings = () => {
               <label className="mb-2 block text-sm font-medium text-slate-700">
                 Phone Number
               </label>
-
+              
               <input
                 type="text"
                 placeholder="Enter nursery phone number"
@@ -1919,7 +1924,7 @@ const renderSettings = () => {
                     phone: e.target.value,
                   })
                 }
-                className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none focus:border-green-600"
+                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-black placeholder:text-slate-400 outline-none focus:border-green-600"
               />
             </div>
 
@@ -1938,7 +1943,7 @@ const renderSettings = () => {
                     email: e.target.value,
                   })
                 }
-                className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none focus:border-green-600"
+                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-black placeholder:text-slate-400 outline-none focus:border-green-600"
               />
             </div>
 
@@ -1957,7 +1962,7 @@ const renderSettings = () => {
                     address: e.target.value,
                   })
                 }
-                className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none focus:border-green-600"
+                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-black placeholder:text-slate-400 outline-none focus:border-green-600"
               />
             </div>
 
@@ -1976,15 +1981,12 @@ const renderSettings = () => {
                     description: e.target.value,
                   })
                 }
-                className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none focus:border-green-600"
+                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-black placeholder:text-slate-400 outline-none focus:border-green-600"
               />
             </div>
 
             <button
-              onClick={() => {
-                console.log("Nursery settings:", nurserySettings);
-                alert("Settings saved successfully 🌱");
-              }}
+              onClick={saveNurserySettings}
               className="w-full rounded-xl bg-green-700 py-3 font-semibold text-white hover:bg-green-800"
             >
               Save Nursery Information
@@ -2022,14 +2024,57 @@ const renderSettings = () => {
               </div>
             </div>
 
-            <button
-              onClick={() =>
-                alert("Change password feature will be connected next.")
-              }
-              className="mt-5 w-full rounded-xl border border-slate-300 py-3 font-semibold text-slate-700 hover:bg-slate-50"
-            >
-              Change Password
-            </button>
+            <div className="mt-5 space-y-4">
+  <div>
+    <label className="mb-2 block text-sm font-medium text-slate-700">
+      Current Password
+    </label>
+
+    <input
+      type="password"
+      value={currentPassword}
+      onChange={(e) => setCurrentPassword(e.target.value)}
+      placeholder="Enter current password"
+      className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-black placeholder:text-slate-400 outline-none focus:border-green-600"
+    />
+  </div>
+
+  <div>
+    <label className="mb-2 block text-sm font-medium text-slate-700">
+      New Password
+    </label>
+
+    <input
+      type="password"
+      value={newPassword}
+      onChange={(e) => setNewPassword(e.target.value)}
+      placeholder="Enter new password"
+      className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-black placeholder:text-slate-400 outline-none focus:border-green-600"
+    />
+  </div>
+
+  <div>
+    <label className="mb-2 block text-sm font-medium text-slate-700">
+      Confirm New Password
+    </label>
+
+    <input
+      type="password"
+      value={confirmPassword}
+      onChange={(e) => setConfirmPassword(e.target.value)}
+      placeholder="Confirm new password"
+      className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-black placeholder:text-slate-400 outline-none focus:border-green-600"
+    />
+  </div>
+
+  <button
+    onClick={changePassword}
+    disabled={changingPassword}
+    className="w-full rounded-xl bg-slate-900 py-3 font-semibold text-white hover:bg-slate-800 disabled:opacity-50"
+  >
+    {changingPassword ? "Changing Password..." : "Change Password"}
+  </button>
+</div>
           </div>
 
           {/* Notifications */}
@@ -2120,7 +2165,7 @@ const renderSettings = () => {
                     low_stock_limit: e.target.value,
                   })
                 }
-                className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none focus:border-green-600"
+                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-black placeholder:text-slate-400 outline-none focus:border-green-600"
               />
 
               <p className="mt-2 text-xs text-slate-500">
@@ -2158,6 +2203,8 @@ const renderSettings = () => {
 };
 const saveNurserySettings = async () => {
   try {
+    setSavingSettings(true);
+
     const token = getToken();
 
     if (!token) {
@@ -2190,17 +2237,109 @@ const saveNurserySettings = async () => {
 
     const data = await response.json();
 
-    console.log("SAVE SETTINGS RESPONSE:", data);
+    if (response.status === 401) {
+      localStorage.removeItem("token");
+      window.location.href = "/admin/login";
+      return;
+    }
 
     if (!response.ok) {
       throw new Error(
         data.message || "Failed to save settings"
       );
     }
+const changePassword = async () => {
+  try {
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      alert("Please fill all password fields");
+      return;
+    }
+
+    if (newPassword.length < 6) {
+      alert("New password must be at least 6 characters");
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      alert("New password and confirm password do not match");
+      return;
+    }
+
+    const token = getToken();
+
+    if (!token) {
+      alert("Admin login required");
+      return;
+    }
+
+    setChangingPassword(true);
+
+    const response = await fetch(
+      `${API_URL}/api/settings/change-password`,
+      {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          currentPassword: currentPassword,
+          newPassword: newPassword,
+        }),
+      }
+    );
+
+    const data = await response.json();
+
+    if (response.status === 401) {
+      localStorage.removeItem("token");
+      window.location.href = "/admin/login";
+      return;
+    }
+
+    if (!response.ok) {
+      throw new Error(data.message || "Failed to change password");
+    }
+
+    alert("Password changed successfully");
+
+    setCurrentPassword("");
+    setNewPassword("");
+    setConfirmPassword("");
+  } catch (error) {
+    console.error("Change password error:", error);
+
+    alert(
+      error instanceof Error
+        ? error.message
+        : "Failed to change password"
+    );
+  } finally {
+    setChangingPassword(false);
+  }
+};
+    // Keep the SAVED values visible on screen
+    const settings = data.settings;
+
+    setNurserySettings({
+      nursery_name: settings.nursery_name || "",
+      phone: settings.phone || "",
+      email: settings.email || "",
+      address: settings.address || "",
+      description: settings.description || "",
+      low_stock_limit: String(
+        settings.low_stock_limit ?? 10
+      ),
+    });
+
+    setNotificationSettings({
+      new_request:
+        settings.notify_new_request ?? true,
+      low_stock:
+        settings.notify_low_stock ?? true,
+    });
 
     alert("Nursery information saved successfully 🌱");
-
-    await fetchSettings();
 
   } catch (error) {
     console.error("Save settings error:", error);
@@ -2210,6 +2349,8 @@ const saveNurserySettings = async () => {
         ? error.message
         : "Failed to save settings"
     );
+  } finally {
+    setSavingSettings(false);
   }
 };
   /* =========================================================
